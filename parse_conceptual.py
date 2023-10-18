@@ -34,8 +34,7 @@ class ConceptualDS(Dataset):
         raw_data = ConceptualDS.get_all_data(data_root, suffix)
         data = []
         for thread_data in raw_data:
-            for item in thread_data:
-                data.append((item, thread_data[item]["caption"]))
+            data.extend((item, thread_data[item]["caption"]) for item in thread_data)
         return data
 
     def __len__(self):
@@ -54,9 +53,7 @@ class ConceptualDS(Dataset):
             is_error = True
         except BaseException:
             is_error = True
-        if is_error:
-            return image, "", image_name
-        return image, caption, image_name
+        return (image, "", image_name) if is_error else (image, caption, image_name)
 
     def __init__(self, data_root: str, preprocess, suffix: str):
         self.suffix = suffix
@@ -131,14 +128,12 @@ def download_conceptual(conceptual_root: str, num_threads: int):
             tsv_path = f"{conceptual_root}/Validation_GCC-1.1.0-Validation.tsv"
         with open(tsv_path) as f:
             read_tsv = csv.reader(f, delimiter="\t")
-            for i, row in enumerate(read_tsv):
-                urls.append((row, i))
+            urls.extend((row, i) for i, row in enumerate(read_tsv))
         progress = tqdm(total=len(urls))
         if num_threads == 1:
             thread(urls, 0, progress, None, suffix, conceptual_root)
         else:
             groups = []
-            threads = []
             lock = threading.Lock()
             split_size = len(urls) // num_threads
             for i in range(num_threads):
@@ -146,8 +141,20 @@ def download_conceptual(conceptual_root: str, num_threads: int):
                     groups.append(urls[i * split_size: (i + 1) * split_size])
                 else:
                     groups.append(urls[i * split_size:])
-            for i in range(num_threads):
-                threads.append(threading.Thread(target=thread, args=(groups[i], i, progress, lock, suffix, conceptual_root)))
+            threads = [
+                threading.Thread(
+                    target=thread,
+                    args=(
+                        groups[i],
+                        i,
+                        progress,
+                        lock,
+                        suffix,
+                        conceptual_root,
+                    ),
+                )
+                for i in range(num_threads)
+            ]
             for i in range(num_threads):
                 threads[i].start()
             for i in range(num_threads):
@@ -158,9 +165,9 @@ def download_conceptual(conceptual_root: str, num_threads: int):
 def add_period(caption: str):
     caption = caption.strip()
     if caption[-1] != '.':
-        caption = caption + '.'
+        caption += '.'
     elif caption[-2] == ' ':
-        caption = caption[:-2] + '.'
+        caption = f'{caption[:-2]}.'
     return caption
 
 
