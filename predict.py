@@ -129,8 +129,9 @@ class ClipCaptionModel(nn.Module):
         if labels is not None:
             dummy_token = self.get_dummy_token(tokens.shape[0], tokens.device)
             labels = torch.cat((dummy_token, tokens), dim=1)
-        out = self.gpt(inputs_embeds=embedding_cat, labels=labels, attention_mask=mask)
-        return out
+        return self.gpt(
+            inputs_embeds=embedding_cat, labels=labels, attention_mask=mask
+        )
 
     def __init__(self, prefix_length: int, prefix_size: int = 512):
         super(ClipCaptionModel, self).__init__()
@@ -182,12 +183,11 @@ def generate_beam(
     with torch.no_grad():
         if embed is not None:
             generated = embed
-        else:
-            if tokens is None:
-                tokens = torch.tensor(tokenizer.encode(prompt))
-                tokens = tokens.unsqueeze(0).to(device)
-                generated = model.gpt.transformer.wte(tokens)
-        for i in range(entry_length):
+        elif tokens is None:
+            tokens = torch.tensor(tokenizer.encode(prompt))
+            tokens = tokens.unsqueeze(0).to(device)
+            generated = model.gpt.transformer.wte(tokens)
+        for _ in range(entry_length):
             outputs = model.gpt(inputs_embeds=generated)
             logits = outputs.logits
             logits = logits[:, -1, :] / (temperature if temperature > 0 else 1.0)
@@ -258,7 +258,7 @@ def generate2(
 
     with torch.no_grad():
 
-        for entry_idx in range(entry_count):
+        for _ in range(entry_count):
             if embed is not None:
                 generated = embed
             else:
@@ -268,8 +268,7 @@ def generate2(
 
                 generated = model.gpt.transformer.wte(tokens)
 
-            for i in range(entry_length):
-
+            for _ in range(entry_length):
                 outputs = model.gpt(inputs_embeds=generated)
                 logits = outputs.logits
                 logits = logits[:, -1, :] / (temperature if temperature > 0 else 1.0)
@@ -287,10 +286,11 @@ def generate2(
                 logits[:, indices_to_remove] = filter_value
                 next_token = torch.argmax(logits, -1).unsqueeze(0)
                 next_token_embed = model.gpt.transformer.wte(next_token)
-                if tokens is None:
-                    tokens = next_token
-                else:
-                    tokens = torch.cat((tokens, next_token), dim=1)
+                tokens = (
+                    next_token
+                    if tokens is None
+                    else torch.cat((tokens, next_token), dim=1)
+                )
                 generated = torch.cat((generated, next_token_embed), dim=1)
                 if stop_token_index == next_token.item():
                     break

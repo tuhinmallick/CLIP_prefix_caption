@@ -188,15 +188,13 @@ class Transformer(nn.Module):
         dim_ref = dim_ref if dim_ref is not None else dim_self
         self.enc_dec = enc_dec
         if enc_dec:
-            num_layers = num_layers * 2
+            num_layers *= 2
         layers = []
         for i in range(num_layers):
-            if i % 2 == 0 and enc_dec:  # cross
+            if i % 2 == 0 and enc_dec or not enc_dec:  # cross
                 layers.append(TransformerLayer(dim_self, dim_ref, num_heads, mlp_ratio, act=act, norm_layer=norm_layer))
-            elif enc_dec:  # self
+            else:  # self
                 layers.append(TransformerLayer(dim_self, dim_self, num_heads, mlp_ratio, act=act, norm_layer=norm_layer))
-            else:  # self or cross
-                layers.append(TransformerLayer(dim_self, dim_ref, num_heads, mlp_ratio, act=act, norm_layer=norm_layer))
         self.layers = nn.ModuleList(layers)
 
 
@@ -206,8 +204,7 @@ class TransformerMapper(nn.Module):
         x = self.linear(x).view(x.shape[0], self.clip_length, -1)
         prefix = self.prefix_const.unsqueeze(0).expand(x.shape[0], *self.prefix_const.shape)
         prefix = torch.cat((x, prefix), dim=1)
-        out = self.transformer(prefix)[:, self.clip_length:]
-        return out
+        return self.transformer(prefix)[:, self.clip_length:]
 
     def __init__(self, dim_clip: int, dim_embedding: int, prefix_length: int, clip_length: int, num_layers: int = 8):
         super(TransformerMapper, self).__init__()
@@ -230,8 +227,9 @@ class ClipCaptionModel(nn.Module):
         if labels is not None:
             dummy_token = self.get_dummy_token(tokens.shape[0], tokens.device)
             labels = torch.cat((dummy_token, tokens), dim=1)
-        out = self.gpt(inputs_embeds=embedding_cat, labels=labels, attention_mask=mask)
-        return out
+        return self.gpt(
+            inputs_embeds=embedding_cat, labels=labels, attention_mask=mask
+        )
 
     def __init__(self, prefix_length: int, clip_length: Optional[int] = None, prefix_size: int = 512,
                  num_layers: int = 8, mapping_type: MappingType = MappingType.MLP):
@@ -259,9 +257,7 @@ class ClipCaptionPrefix(ClipCaptionModel):
 
 
 def save_config(args: argparse.Namespace):
-    config = {}
-    for key, item in args._get_kwargs():
-        config[key] = item
+    config = dict(args._get_kwargs())
     out_path = os.path.join(args.out_dir, f"{args.prefix}.json")
     with open(out_path, 'w') as outfile:
         json.dump(config, outfile)
